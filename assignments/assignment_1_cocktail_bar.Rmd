@@ -49,7 +49,7 @@ library(stringr)
 
 
 # read the dataset 
-url <- "https://raw.githubusercontent.com/nthun/cocktail-balance/refs/heads/master/cocktail_data.tsv"
+url <- "https://github.com/nthun/cocktail-balance/blob/master/cocktail_data.tsv"
 cocktail_data <- read_tsv(url)
 
 # preview the first few rows 
