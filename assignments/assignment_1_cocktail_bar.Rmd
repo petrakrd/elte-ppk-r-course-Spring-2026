@@ -33,6 +33,28 @@ Read the cocktail dataset from: <https://github.com/nthun/cocktail-balance> You 
 
 ```{r}
 
+# packages
+# install.packages("readr")
+# install.packages("dplyr")
+# install.packages("tidyr")
+# install.packages("stringr")
+
+# load packages
+library(readr)
+library(dplyr)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+
+# read the dataset 
+url <- "https://raw.githubusercontent.com/nthun/cocktail-balance/refs/heads/master/cocktail_data.tsv"
+cocktail_data <- read_tsv(url)
+
+# preview the first few rows 
+head(cocktail_data)
+
 ```
 
 ## 2. Transform the data table and clean the ingredient variable!
@@ -40,6 +62,63 @@ Read the cocktail dataset from: <https://github.com/nthun/cocktail-balance> You 
 The ingredients are currently in a single cell for each cocktail. It would be better to put them in separate rows. Also, the variable should be cleaned of all quantities (e.g. 1/2 oz, 2 dashes, etc.), and the indicator of alcohol content (e.g. 47.3% abv). You will need to use this cleaned table in later tasks.
 
 ```{r}
+
+# extract the column which contains the ingredients
+ingredients_column <- cocktail_data[[8]]   
+
+# clean and separate ingredients
+clean_ingredients <- function(ingredients) {
+  # split ingredients by <br/>
+  ingredient_list <- unlist(strsplit(ingredients, "<br/>"))
+  
+  # remove measurements, quantities, and non-ingredient terms
+  ingredient_list_cleaned <- gsub("\\b\\d+\\b|oz|%|abv|ml|tbsp|bsp|dash|drops?|dashes|br|<>|\\(.*?\\)", "", ingredient_list, ignore.case = TRUE)
+  
+  # remove extra spaces and empty entries
+  # remove any other non-alphabetic characters 
+  ingredient_list_cleaned <- gsub("[^a-zA-Z ]", "", ingredient_list_cleaned)
+  ingredient_list_cleaned <- trimws(ingredient_list_cleaned)
+  ingredient_list_cleaned <- ingredient_list_cleaned[ingredient_list_cleaned != ""]
+  
+  return(ingredient_list_cleaned)
+}
+
+# apply the cleaning function to each ingredient 
+cleaned_ingredients <- lapply(ingredients_column, clean_ingredients)
+
+# create a new data frame with each ingredient in a separate row
+cleaned_ingredients_df <- cocktail_data %>%
+  mutate(ingredients = cleaned_ingredients) %>%
+  unnest(ingredients) %>%
+  mutate(ingredients = trimws(ingredients))  
+
+# view the cleaned data
+head(cleaned_ingredients_df)
+cleaned_ingredients_df
+
+print(n=220, cleaned_ingredients_df)
+
+# removing the remaining unnecessary characters "s" and "es"
+cleaned_ingredients_df <- cleaned_ingredients_df %>%
+  mutate(ingredients = gsub("\\b(s|es)\\b", "", ingredients)) %>%
+  mutate(ingredients = trimws(ingredients))
+
+# separating ingredients incorrectly placed in the same row
+cleaned_ingredients_df <- cleaned_ingredients_df %>%
+  # split by multiple spaces or by " or "
+  mutate(ingredients = strsplit(ingredients, "\\s{2,}|\\s+or\\s+")) %>%
+  # separate the ingredients to place each on a new row
+  unnest(ingredients) %>%
+  # trim extra spaces
+  mutate(ingredients = trimws(ingredients)) %>%
+  # remove any empty rows 
+  filter(ingredients != "")
+
+# view the cleaned data
+head(cleaned_ingredients_df)
+cleaned_ingredients_df
+
+print(n=224, cleaned_ingredients_df)
 
 ```
 
@@ -49,6 +128,15 @@ Before opening the bar, you need to find a reliable supplier that has all the in
 
 ```{r}
 
+# get ingredients across all cocktails (without duplicates)
+needed_ingredients <- unique(trimws(gsub("/|\\(.*?\\)|\\b\\d+\\b|oz|%|abv|ml|tbsp|bsp|dash|drops?|dashes|br|\\.", "", cleaned_ingredients_df$ingredients, ignore.case = TRUE)))
+
+# remove any extra spaces
+needed_ingredients <- needed_ingredients[needed_ingredients != ""]
+
+# print unique ingredients in alphabetical order 
+print(paste("Needed ingredients:", paste(sort(needed_ingredients), collapse = ", ")))
+
 ```
 
 ## 4. Number of unique ingredients
@@ -56,6 +144,10 @@ Before opening the bar, you need to find a reliable supplier that has all the in
 How many different ingredients you will need?
 
 ```{r}
+
+# count and print needed ingredients 
+num_needed_ingredients <- length(needed_ingredients)
+print(paste("Number of needed ingredients:", num_needed_ingredients))
 
 ```
 
@@ -65,6 +157,17 @@ What are the 10 most frequently used ingredients? If there are ties, you can lis
 
 ```{r}
 
+# count and arrange the ingredients
+top_ingredients <- cleaned_ingredients_df %>%
+  count(ingredients) %>%
+  arrange(desc(n)) %>%
+# rank the ingredients while assigning the same rank to ties
+  mutate(rank = dense_rank(-n)) %>%  
+# filter the top 10 ranks (including ties)
+  filter(rank <= 10)  
+
+print(top_ingredients)
+
 ```
 
 ## 6. Which cocktail(s) has/have the most ingredients?
@@ -72,6 +175,15 @@ What are the 10 most frequently used ingredients? If there are ties, you can lis
 Count the number of ingredients and filter all the cocktails that has that many.
 
 ```{r}
+# count the number of ingredients in each cocktail 
+ingredient_per_cocktail <- cleaned_ingredients_df %>%
+  group_by(name) %>%  
+  summarise(ingredient_count = n()) %>%  
+  filter(ingredient_count == max(ingredient_count))  # filter cocktails with the most ingredients
+# print the result  
+for (cocktail in ingredient_per_cocktail$name) {
+  print(paste(cocktail, "has the most ingredients."))
+}
 
 ```
 
@@ -81,11 +193,37 @@ Count all cocktails with only one ingredient, and
 
 ```{r}
 
+# count the number of cocktails each ingredient appears in
+rare_ingredient <- cleaned_ingredients_df %>%
+  group_by(ingredients) %>%  
+  summarise(cocktail_count = n_distinct(name)) %>%  # count the number of coctails each ingredient appears in 
+  filter(cocktail_count == 1)  # filter for ingredients that appear in exactly one cocktail
+
+print(rare_ingredient)
+
+# count the number of ingredients that appear in only one cocktail
+num_rare_ingredient <- nrow(rare_ingredient)
+
+print(paste("Rare ingredients:", num_rare_ingredient))
+
 ```
 
 ## 8. Which cocktail has an ingredient that is only used in one cocktail?
 
 ```{r}
+
+rare_ingredient_names <- rare_ingredient$ingredients
+
+# filter rowa with rare ingredients 
+cocktails_with_rare_ingredients <- cleaned_ingredients_df %>%
+  filter(ingredients %in% rare_ingredient_names)  
+
+# rare ingredients name
+cocktail_names_rare_ingredients <- unique(cocktails_with_rare_ingredients$name)
+
+# print the output
+print("Cocktails with rare ingredients:")
+print(cocktail_names_rare_ingredients)
 
 ```
 
@@ -93,6 +231,17 @@ Count all cocktails with only one ingredient, and
 
 ```{r}
   
+# filtering cocktails with no rare ingredients 
+cocktails_with_no_rare_ingredients <- cleaned_ingredients_df %>%
+  filter(!name %in% cocktail_names_rare_ingredients) %>% 
+  distinct(name)
+
+cocktail_names_no_rare_ingredients <- cocktails_with_no_rare_ingredients$name
+
+# printing output
+print("Cocktails with no rare ingredients:")
+print(cocktail_names_no_rare_ingredients)
+
 ```
 
 ## 10. Create a cheat sheet for the bartender!
@@ -108,6 +257,32 @@ tribble(~name, ~Lime, ~`White rum`, ~`Cane sugar`, ~`Coca-cola`, ~Mint, ~Soda,
 ```
 
 ```{r}
+
+# empty table with ingredients as columns and cocktails as rows
+ingredient_names <- unique(cleaned_ingredients_df$ingredients)
+cocktail_names <- unique(cleaned_ingredients_df$name)
+
+cocktail_ingredient_matrix <- as.data.frame(matrix(
+  nrow = length(cocktail_names),
+  ncol = length(ingredient_names) + 1  # +1 for the cocktail name column
+))
+colnames(cocktail_ingredient_matrix) <- c("Cocktail", ingredient_names)
+cocktail_ingredient_matrix$Cocktail <- cocktail_names
+
+# put an X in the intersections where a cocktail has an ingredient
+for (i in 1:nrow(cocktail_ingredient_matrix)) {
+  cocktail_name <- cocktail_ingredient_matrix$Cocktail[i]
+  ingredients_in_cocktail <- cleaned_ingredients_df %>%
+    filter(name == cocktail_name) %>%
+    pull(ingredients)
+  
+  cocktail_ingredient_matrix[i, ingredient_names %in% ingredients_in_cocktail] <- "X"
+}
+
+# replace "no match" cells with blanks
+cocktail_ingredient_matrix[is.na(cocktail_ingredient_matrix)] <- ""
+
+print(cocktail_ingredient_matrix)
 
 ```
 
