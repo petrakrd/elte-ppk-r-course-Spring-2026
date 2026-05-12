@@ -32,6 +32,43 @@ The 2020-09-22 TidyTueday datasets are about climbing expeditions. From the thre
 
 ```{r}
 
+# load the expeditions dataset 
+expedition_data <- read_csv(
+  "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-22/expeditions.csv",
+  show_col_types = FALSE
+)
+
+# prepare data
+climbing_data <- expedition_data %>%
+  mutate(
+    peak_label = forcats::fct_lump(peak_name, n = 15),
+    peak_label = droplevels(peak_label)
+  ) %>%
+  filter(peak_label != "Other")
+
+climbing_counts <- climbing_data %>%
+  count(peak_label, season) %>%
+  mutate(peak_label = forcats::fct_reorder(peak_label, n, .fun = sum))
+
+# plotting
+ggplot(climbing_counts, aes(x = n, y = peak_label, fill = season)) +
+  geom_col() +
+  scale_fill_viridis_d() +
+  labs(
+    title = "Top 15 Peaks by Expedition Season",
+    x = "Number of Expeditions",
+    y = "Peak Name",
+    fill = "Season"
+  ) +
+  theme_light() +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(hjust = 1),
+    legend.position = "bottom",
+    legend.title = element_text(hjust = 0.5),
+    legend.justification = "center"
+  )
+
 ```
 
 ## Task 2: PhDs awarded
@@ -46,6 +83,32 @@ Notes:
 
 ```{r}
 
+library(scales)
+
+# load the data
+phd_dataset <- read_csv(
+  "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-02-19/phd_by_field.csv",
+  show_col_types = FALSE
+)
+                                                               
+# aggregate
+phd_totals <- phd_dataset %>%
+  group_by(category = broad_field, year) %>%
+  summarize(total_count = sum(n_phds, na.rm = TRUE), .groups = "drop")
+
+# plotting
+ggplot(phd_totals, aes(x = year, y = total_count, color = category, group = category)) +
+  geom_line(linewidth = 1.2) + # Itt cseréltem a size-ot linewidth-ra
+  scale_x_continuous(breaks = pretty_breaks()) +
+  scale_y_continuous(labels = comma_format()) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Number of awarded Ph.D.-s in the US by year",
+    color = "Broad field"
+  ) +
+  ylab(NULL) +
+  theme_minimal()
+
 ```
 
 ## Task 3: Commute in the US
@@ -59,5 +122,40 @@ Notes:
 -   The point size is 2, . The theme is set to light.
 
 ```{r}
+
+# load data 
+commute_dataset <- read_csv(
+  "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-11-05/commute.csv",
+  show_col_types = FALSE
+)
+
+# aggregate  
+commute_summary <- commute_dataset %>%
+  filter(mode %in% c("Bike", "Walk")) %>%
+  pivot_wider(
+    names_from = mode,
+    values_from = n,
+    values_fill = list(n = 0)
+  ) %>%
+  group_by(state_code = state_abb, region = state_region) %>%
+  summarize(
+    avg_walk = mean(Walk, na.rm = TRUE),
+    avg_bike = mean(Bike, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# plotting
+ggplot(commute_summary, aes(x = avg_walk, y = avg_bike, color = region, label = state_code)) +
+  geom_point(size = 2) +  
+  geom_text(color = "black", size = 4) +  
+  scale_x_log10(labels = comma_format()) +
+  scale_y_log10(labels = comma_format()) +
+  labs(
+    title = "Title number of people walking vs. biking to work in each USA state",
+    x = "Number of ppl walking to work (log N)",
+    y = "Number of ppl biking to work (log N)",
+    color = "Region"
+  ) +
+  theme_light() 
 
 ```
