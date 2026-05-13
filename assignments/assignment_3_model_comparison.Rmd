@@ -60,6 +60,18 @@ Read the dataset used in this assignment. Pay attention to the extension of the 
 
 ```{r}
 
+#install.packages("readxl")
+#install.packages("car")
+#install.packages("lmtest")
+
+library(readxl)
+library(tidyverse)
+library(car) 
+library(lmtest)
+library(lm.beta)
+
+pain_data <- read_excel("data/assignment_3_dataset.xlsx")
+
 ```
 
 ## Data and model diagnostics 
@@ -70,6 +82,14 @@ Run an exploratory data analysis (EDA) to investigate the dataset.
 
 ```{r}
 
+# descriptive statistics
+summary(pain_data)
+
+# check variables 
+table(pain_data$sex) # check if there are overlapping values
+table(pain_data$pain) # check if the values are between 0 and 10
+table(pain_data$STAI_trait) # check if the values are between 20 and 80
+
 ```
 
 #### Correct coding errors
@@ -77,6 +97,18 @@ Run an exploratory data analysis (EDA) to investigate the dataset.
 If you find values in the dataset during the EDA, that are not correct based on the provided descriptions of the variables of the dataset please correct them here.
 
 ```{r}
+
+# replace "woman" with "female"
+# keep only valid rows (pain 0-10, mindfulness 1-6)
+clean_data <- pain_data %>%
+  mutate(sex = ifelse(sex == "woman", "female", sex)) %>%
+  filter(
+    pain >= 0 & pain <= 10,
+    mindfulness >= 1 & mindfulness <= 6
+  )
+
+# check the summary of the clean data to ensure errors are gone
+summary(clean_data)
 
 ```
 
@@ -87,6 +119,12 @@ In order to test the more complex model for outliers and to test the assumptions
 
 ```{r}
 
+# fit the more complex model with all predictors
+complex_model <- lm(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_serum + cortisol_saliva, data = clean_data)
+
+# summary of the complex model
+summary(complex_model)
+
 ```
 
 #### Checking for influential outliers
@@ -94,6 +132,13 @@ In order to test the more complex model for outliers and to test the assumptions
 Check for outlier values in the model.
 
 ```{r}
+
+# check for influential points using Cook's distance
+cooks_distance <- cooks.distance(complex_model)
+
+# identify observations with Cook's distance 
+influential_points <- which(cooks_distance > (4 / nrow(clean_data)))
+influential_points
 
 ```
 
@@ -103,17 +148,28 @@ Check the normality assumption.
 
 ```{r}
 
+# Q-Q plot for normality of residuals
+qqnorm(residuals(complex_model))
+qqline(residuals(complex_model), col = "red")
+
 ```
 
 Check the linearity assumption.
 
 ```{r}
 
+# residuals vs. fitted values plot
+plot(fitted(complex_model), residuals(complex_model), main = "Residuals vs Fitted", xlab = "Fitted values", ylab = "Residuals")
+abline(h = 0, col = "red")
+
 ```
 
 Check the homoscedasticty assumption (homogeneity of variance).
 
 ```{r}
+
+# scale-Location plot for homoscedasticity
+plot(complex_model, which = 3) 
 
 ```
 
@@ -127,6 +183,10 @@ http://blog.minitab.com/blog/understanding-statistics/handling-multicollinearity
 
 ```{r}
 
+# check VIF for multicollinearity
+library(car)
+vif(complex_model)
+
 ```
 
 ### Making decision based on model diagnostics
@@ -135,11 +195,38 @@ If based on the assumption tests you decide to drop a predictor variable you sho
 
 ```{r}
 
+# remove influential outliers identified in the previous step
+updated_clean_data <- clean_data[-influential_points, ]
+
+# rebuild the model without cortisol_serum and without influential outliers
+updated_model <- lm(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_saliva, data = updated_clean_data)
+
+summary(updated_model)
+
+# plot residuals vs fitted values
+plot(updated_model, 1)
+
+# plot scale-location plot (for homoscedasticity)
+plot(updated_model, 3)
+
+# check VIF for multicollinearity after removing one cortisol variable
+library(car)
+vif(updated_model)
+
+
 ```
 
 #### Checking outliers of the updated model
 
 ```{r}
+
+# checking for outliers using Cook's distance
+cooks_d <- cooks.distance(updated_model)
+influential_points_new <- which(cooks_d > (4 / nrow(updated_clean_data)))
+
+# visualizing Cook's distance
+plot(cooks_d, main="Cook's Distance", type="h", col="red")
+abline(h = 4 / nrow(updated_clean_data), col="blue", lty=2)
 
 ```
 
@@ -149,11 +236,21 @@ Normality assumption
 
 ```{r}
 
+# plotting histogram and Q-Q plot (to check normality of residuals)
+par(mfrow=c(1, 2))  
+hist(residuals(updated_model), main="Histogram of Residuals", xlab="Residuals", col="gray", breaks=20)
+qqnorm(residuals(updated_model))
+qqline(residuals(updated_model), col="red")
+par(mfrow=c(1, 1))
+
 ```
 
 Linearity assumption
 
 ```{r}
+
+# scatterplot of residuals vs fitted values to check for linearity
+plot(updated_model, 1)  # Residuals vs Fitted plot
 
 ```
 
@@ -161,11 +258,18 @@ Homoscedasticty assumption (homogeneity of variance)
 
 ```{r}
 
+# check for homoscedasticity  
+plot(updated_model, 3)  # Scale-Location plot
+
 ```
 
 Multicollinearity assumption
 
 ```{r}
+
+# checking for multicollinearity using VIF
+library(car)
+vif(updated_model)
 
 ```
 
@@ -174,12 +278,27 @@ Multicollinearity assumption
 Create the simple model and get the results of the model that needs to be reported based on the What to report section.
 
 ```{r}
+# simple model: pain ~ age + sex 
+simple_model <- lm(pain ~ age + sex, data = updated_clean_data)
+
+# display the summary of the simple model
+summary(simple_model)
 
 ```
 
 Create the more complex model based on the results of the model diagnostics. Also, get the results that needs to be reported based on the What to report section.
 
 ```{r}
+complex_model <- updated_model
+
+# display summary for unstandardized coefficients and p-values
+summary(complex_model)
+
+# confidence intervals
+confint(complex_model)
+
+# standardized regression coefficients  
+summary(lm.beta(complex_model))
 
 ```
 
@@ -187,5 +306,16 @@ Compare the two models.
 
 ```{r}
 
+# comparing models using AIC
+AIC(simple_model, complex_model)
+
+# comparing models using Likelihood Ratio Test (F-test)
+anova(simple_model, complex_model)
+
 ```
+
+## Discussion
+The regression equation of the more complex model is: Y = 1.63 - 0.04 * age + 0.28 * sex_male - 0.01 * STAI_trait + 0.11 * pain_cat - 0.13 * mindfulness + 0.55 * cortisol_saliva
+## The complex model has lower AIC (measure for goodness of fit), and explains greater proportion of varience of the data, so it seems to be a better fit than the simple model. 
+## The inclusion of psychological and hormonal variables e.g. trait anxiety, pain catastrophizing, mindfulness, and cortisol levels into the complex model provides a deeper understanding of postoperative pain, as these measures capture dimensions of pain experience that demographic factors like age and sex cannot (fully) explain. The result may not be that surprising in light of previous research but it may worth mentioning that by measuring cortisol from saliva, the model integrates a biological mechanism of stress regulation that complements the psychological factors, while there are also some aspects what could help elaborate on the issue - cognitive factors such as executive functioning, or emotional factors like mood, or state-anxiety. 
 
