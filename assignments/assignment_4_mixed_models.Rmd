@@ -59,6 +59,15 @@ Read the datasets used in this assignment. Pay attention to the extensions of th
 
 ```{r}
 
+#install.packages("haven") 
+
+library(tidyverse)
+library(haven)
+
+# read files
+data_a <- read_sav("data/assignment_4_dataset_A.sav")
+data_b <- read_sav("data/assignment_4_dataset_B.sav")
+
 ```
 
 ## Exploratory data analysis
@@ -66,6 +75,17 @@ Read the datasets used in this assignment. Pay attention to the extensions of th
 Run an exploratory data analysis (EDA) to investigate the dataset.
 
 ```{r}
+
+# descriptive statistics
+summary(data_a)
+
+# check categories 
+table(data_a$sex)
+table(data_a$pain)
+
+# check distr. of hospitals  
+table(data_a$hospital) 
+table(data_b$hospital)
 
 ```
 
@@ -75,5 +95,101 @@ If you find values in the dataset during the EDA, that are not correct based on 
 
 ```{r}
 
+# clean data A
+clean_data_a <- data_a %>%
+  mutate(sex = tolower(sex)) %>%  
+  mutate(sex = ifelse(sex == "woman", "female", sex)) %>%
+  mutate(sex = as.factor(sex), hospital = as.factor(hospital)) %>%  
+  filter(
+    pain >= 0 & pain <= 10,
+    mindfulness >= 1 & mindfulness <= 6
+  )
+
+# clean data B
+clean_data_b <- data_b %>%
+  mutate(sex = tolower(sex)) %>%
+  mutate(sex = ifelse(sex == "woman", "female", sex)) %>%
+  mutate(sex = as.factor(sex), hospital = as.factor(hospital)) %>%  
+  filter(
+    pain >= 0 & pain <= 10,
+    mindfulness >= 1 & mindfulness <= 6
+  )
+
 ```
 
+## Building the mixed model
+
+First, I fit a linear mixed model on dataset A to predict postoperative pain, using a random intercept for the hospitals
+
+```{r}
+
+#install.packages("lme4")
+#install.packages("lmerTest")
+#install.packages("MuMIn")
+
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+
+# fit the random intercept model on dataset A
+mixed_model <- lmer(pain ~ age + sex + STAI_trait + pain_cat + mindfulness + cortisol_saliva + (1 | hospital), data = clean_data_a)
+
+# model coefficients and p-values
+summary(mixed_model)
+
+# confidence intervals for the fixed effects
+confint(mixed_model)
+
+# compute marginal and conditional R-squared
+r.squaredGLMM(mixed_model)
+
+```
+
+## Predicting on a new dataset
+Now I use the model trained on dataset A to predict pain in dataset B. Because dataset B contains different hospitals, I only use the fixed effects for prediction
+
+```{r}
+
+# predict pain on dataset B 
+predictions_b <- predict(mixed_model, newdata = clean_data_b, re.form = NA)
+
+# Residual Sum of Squares (RSS)
+RSS <- sum((clean_data_b$pain - predictions_b)^2)
+
+# Total Sum of Squares (TSS)
+TSS <- sum((clean_data_b$pain - mean(clean_data_b$pain))^2)
+
+# R-squared for dataset B
+R2_B <- 1 - (RSS / TSS)
+
+cat("The variance explained by the model on datafile B (R-squared) is:", R2_B, "\n")
+
+```
+
+# What to report
+
+The coefficients and 95% confidence intervals for each fixed effect predictor obtained from the linear mixed model on data file A:
+
+| Predictor | Estimate | 95% CI |
+| :--- | :--- | :--- |
+| (Intercept) | 2.06 | [-0.71, 4.87] |
+| Age | -0.03 | [-0.07, 0.01] |
+| Sex (Male) | 0.15 | [-0.22, 0.52] |
+| STAI Trait | -0.02 | [-0.07, 0.02] |
+| Pain Catastrophizing | 0.07 | [0.02, 0.13] |
+| Mindfulness | -0.20 | [-0.39, -0.00] |
+| Cortisol (Saliva) | 0.66 | [0.43, 0.88] |
+
+As for the variance components, the variance associated with the random intercept (hospital) was 0.37, while the residual variance was 1.45. 
+
+The marginal R^2 of the model on data file A was 0.318 (31.8%), and the conditional R^2 (variance explained by both fixed and random effects) was 0.458 (45.8%). When using this model to predict pain in the new dataset (data file B) using only the fixed effects, the observed R^2 was 0.381 (38.1%).
+
+# What to discuss
+
+Comparing the current linear mixed model with the linear regression model from the previous assignment, several similarities and differences occur. The direction of the relationships between the predictors and postoperative pain remained consistent. Salivary cortisol and pain catastrophizing remained strong positive predictors of pain, whereas mindfulness showed a negative association. 
+
+However, accounting for the clustering of data within different hospitals  likely shifted the exact estimates and widened the confidence intervals compared to the simple linear model. This happens due to the reason that mixed model effectively controls for the shared variance among patients treated at the same site, providing a more conservative and reliable estimate of the fixed effects. 
+
+The variance explained by the fixed effects alone (31.8%) is lower than the total variance explained when including the hospital clusters (45.8%), indicating that institutional differences (e.g., hospital protocols or environments) account for a meaningful portion of postoperative pain variance.
+
+Finally, the cross-validation on data file B yielded an R^2 of 38.1% - it is lower than the conditional R^2 (since we could not use the hospital-specific intercepts for new hospitals), but it is higher than the marginal R^2, suggesting that our fixed psychological and hormonal predictors provide a robust estimation of postoperative pain across completely different hospital settings.
